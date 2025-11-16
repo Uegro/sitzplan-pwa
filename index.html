@@ -331,6 +331,19 @@
         <p class="small" style="margin-top:0.3rem;">
           Klassen & Sitzpläne werden lokal auf diesem Gerät gespeichert (kein Server).
         </p>
+
+        <!-- NEU: Backup-Export/Import -->
+        <div style="margin-top:0.4rem;">
+          <button id="backupExportBtn" class="secondary">
+            Backup (alle Klassen & Stunden) exportieren
+          </button>
+          <label class="small" style="display:block; margin-top:0.3rem;">
+            Backup importieren (JSON):
+            <input id="backupImportInput" type="file" accept=".json,application/json">
+          </label>
+        </div>
+
+
         <div id="classMessage" class="alert"></div>
       </div>
     </div>
@@ -441,6 +454,9 @@
   const saveClassBtn = document.getElementById("saveClassBtn");
   const deleteClassBtn = document.getElementById("deleteClassBtn");
   const classMessage = document.getElementById("classMessage");
+  const backupExportBtn = document.getElementById("backupExportBtn");
+  const backupImportInput = document.getElementById("backupImportInput");
+
 
   const currentClassLabel = document.getElementById("currentClassLabel");
   const lessonDateInput = document.getElementById("lessonDate");
@@ -1021,6 +1037,72 @@
     });
 
     downloadCsv(lines.join("\n"), `mitarbeit_${clsName}_aktuelle_stunde.csv`);
+
+    function exportBackup() {
+      const data = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        classes,
+        sessions
+      };
+
+      const json = JSON.stringify(data, null, 2);
+      const today = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const fileDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+
+      const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mitarbeit_backup_${fileDate}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showClassMessage("Backup-Datei heruntergeladen.", true);
+    }
+
+    function importBackupFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result;
+          const data = JSON.parse(text);
+
+          if (!data || !Array.isArray(data.classes) || !Array.isArray(data.sessions)) {
+            showClassMessage("Backup-Datei hat nicht das erwartete Format.", false);
+            return;
+          }
+
+          if (!confirm("Backup importieren? Dadurch werden vorhandene Klassen und Stunden überschrieben.")) {
+            return;
+          }
+
+          classes = data.classes;
+          sessions = data.sessions;
+
+          saveClasses();
+          saveSessions();
+
+          updateClassSelect();
+          renderSessionsTable();
+          students = [];      // aktueller Sitzplan wird neu geladen, wenn du eine Klasse auswählst
+          renderSeatingGrid();
+          updateStats();
+          currentClassId = null;
+          updateCurrentClassLabel();
+
+          showClassMessage("Backup importiert. Bitte Klasse auswählen.", true);
+        } catch (err) {
+          console.error(err);
+          showClassMessage("Backup-Datei konnte nicht gelesen werden.", false);
+        }
+      };
+      reader.readAsText(file);
+    }
+
   }
 
   function exportAllSessionsCsv() {
@@ -1130,6 +1212,18 @@
   exportAllCsvBtn.addEventListener("click", () => {
     exportAllSessionsCsv();
   });
+
+  backupExportBtn.addEventListener("click", () => {
+  exportBackup();
+});
+
+backupImportInput.addEventListener("change", (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  importBackupFile(file);
+  // Auswahl zurücksetzen, damit du später die gleiche Datei erneut wählen kannst
+  backupImportInput.value = "";
+});
 
   // ------------------ Initialisierung -------------------------------
 
