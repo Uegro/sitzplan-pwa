@@ -360,8 +360,8 @@
 
     <div class="row">
       <div>
-        <label for="lessonDate">Datum</label>
-        <input id="lessonDate" type="date">
+        <label for="lessonDate">Datum & Uhrzeit</label>
+        <input id="lessonDate" type="datetime-local">
       </div>
       <div>
         <label>&nbsp;</label>
@@ -928,8 +928,8 @@
       lessonDateInput.value = dateVal;
     }
 
-    // Nur Datum speichern (ohne Uhrzeit)
-    const dateIso = new Date(dateVal).toISOString().split("T")[0];
+    // datetime-local → ISO
+    const dateIso = new Date(dateVal).toISOString();
     const sessionId = `${currentClassId}_${dateIso}`;
 
     const scores = students.map(s => ({
@@ -983,10 +983,17 @@
       const tdNeg = document.createElement("td");
 
       const d = new Date(s.dateIso);
-      const dateStr = d.toLocaleDateString("de-DE");
-            tdDate.textContent = dateStr;
-            tdPos.textContent = totalPos;
-            tdNeg.textContent = totalNeg;
+      const dateStr = d.toLocaleString("de-DE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+
+      tdDate.textContent = dateStr;
+      tdPos.textContent = totalPos;
+      tdNeg.textContent = totalNeg;
 
       tr.appendChild(tdDate);
       tr.appendChild(tdPos);
@@ -1020,7 +1027,7 @@
     const dateVal = lessonDateInput.value || "";
     const lines = [];
     lines.push(`Klasse;${clsName}`);
-    lines.push(`Datum;${dateVal.split("T")[0]}`);
+    lines.push(`Datum;${dateVal}`);
     lines.push("");
     lines.push("Platz;Name;Positiv;Negativ");
 
@@ -1119,7 +1126,13 @@
 
     filtered.forEach(s => {
       const d = new Date(s.dateIso);
-      const dateStr = d.toLocaleDateString("de-DE");
+      const dateStr = d.toLocaleString("de-DE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
       s.scores.forEach(sc => {
         lines.push(
           `"${dateStr}";"${sc.name.replace(/"/g, '""')}";${sc.pos};${sc.neg}`
@@ -1145,11 +1158,13 @@
   function setLessonDateNow() {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
-    const dateStr =
+    const localIso =
       now.getFullYear() +
       "-" + pad(now.getMonth() + 1) +
-      "-" + pad(now.getDate());
-    lessonDateInput.value = dateStr;
+      "-" + pad(now.getDate()) +
+      "T" + pad(now.getHours()) +
+      ":" + pad(now.getMinutes());
+    lessonDateInput.value = localIso;
   }
 
   // ------------------ Event Listener --------------------------------
@@ -1197,6 +1212,7 @@
   exportAllCsvBtn.addEventListener("click", () => {
     exportAllSessionsCsv();
   });
+
 
   backupExportBtn.addEventListener("click", () => {
   exportBackup();
