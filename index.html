@@ -162,18 +162,23 @@
       border-radius: 12px;
       padding: 0.45rem 0.5rem;
       min-width: 130px;
-      min-height: 96px;
+      min-height: 110px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       border: 1px solid #e5e7eb;
       touch-action: manipulation;
+      transition: opacity 0.15s ease;
+    }
+
+    .seat.absent {
+      opacity: 0.45;
     }
 
     .seat-name {
       font-size: 0.9rem;
       font-weight: 600;
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.15rem;
       word-wrap: break-word;
     }
 
@@ -225,6 +230,22 @@
       color: #9ca3af;
       text-align: center;
       margin: auto;
+    }
+
+    .presence-row {
+      margin-bottom: 0.2rem;
+    }
+
+    .presence-label {
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .presence-label input {
+      width: 1rem;
+      height: 1rem;
     }
 
     .flex-between {
@@ -292,8 +313,9 @@
 <div class="container">
   <h1>Sitzplan – Mündliche Mitarbeit</h1>
   <p class="small">
-    Für Tablets optimiert. Tippe auf die <strong>+ / − Knöpfe</strong> bei jeder Person, um
-    <strong>positive</strong> und <strong>negative Beiträge getrennt</strong> zu zählen. Alles wird offline gespeichert.
+    Für Tablets optimiert. Tippe auf <strong>+ / −</strong> bei jeder Person, um
+    <strong>positive</strong> und <strong>negative Beiträge getrennt</strong> zu zählen.
+    Markiere mit dem Kästchen, wer <strong>anwesend</strong> ist.
   </p>
 
   <!-- Klassenverwaltung -->
@@ -332,7 +354,7 @@
           Klassen & Sitzpläne werden lokal auf diesem Gerät gespeichert (kein Server).
         </p>
 
-        <!-- NEU: Backup-Export/Import -->
+        <!-- Backup -->
         <div style="margin-top:0.4rem;">
           <button id="backupExportBtn" class="secondary">
             Backup (alle Klassen & Stunden) exportieren
@@ -342,7 +364,6 @@
             <input id="backupImportInput" type="file" accept=".json,application/json">
           </label>
         </div>
-
 
         <div id="classMessage" class="alert"></div>
       </div>
@@ -360,8 +381,8 @@
 
     <div class="row">
       <div>
-        <label for="lessonDate">Datum & Uhrzeit</label>
-        <input id="lessonDate" type="datetime-local">
+        <label for="lessonDate">Datum</label>
+        <input id="lessonDate" type="date">
       </div>
       <div>
         <label>&nbsp;</label>
@@ -402,6 +423,7 @@
         <tr>
           <th>#</th>
           <th>Name</th>
+          <th>Anwesend</th>
           <th>Positiv</th>
           <th>Negativ</th>
         </tr>
@@ -414,12 +436,12 @@
   <div class="card">
     <h2>Gespeicherte Stunden (aktuelle Klasse)</h2>
     <p class="small">
-      Jede gespeicherte Stunde enthält die Summe aller positiven und negativen Beiträge.
+      Jede gespeicherte Stunde enthält die Summe aller positiven und negativen Beiträge sowie die Anwesenheit.
     </p>
     <table id="sessionsTable" style="display:none;">
       <thead>
         <tr>
-          <th>Datum/Zeit</th>
+          <th>Datum</th>
           <th>Positiv gesamt</th>
           <th>Negativ gesamt</th>
         </tr>
@@ -436,10 +458,10 @@
   const STORAGE_SESSIONS = "sp_sessions_v1";
 
   let classes = [];  // { id, name, rows, cols, layout, students:[{name,row,col}] }
-  let sessions = []; // { id, classId, className, dateIso, scores:[{name,pos,neg}] }
+  let sessions = []; // { id, classId, className, date, scores:[{name,pos,neg,present}] }
 
   let currentClassId = null;
-  let students = []; // aktueller Sitzplan mit Zählern: {id,name,row,col,pos,neg}
+  let students = []; // aktueller Sitzplan: {id,name,row,col,pos,neg,present}
 
   // ------------------ DOM-Elemente ---------------------------------
 
@@ -454,9 +476,9 @@
   const saveClassBtn = document.getElementById("saveClassBtn");
   const deleteClassBtn = document.getElementById("deleteClassBtn");
   const classMessage = document.getElementById("classMessage");
+
   const backupExportBtn = document.getElementById("backupExportBtn");
   const backupImportInput = document.getElementById("backupImportInput");
-
 
   const currentClassLabel = document.getElementById("currentClassLabel");
   const lessonDateInput = document.getElementById("lessonDate");
@@ -537,7 +559,7 @@
     if (!msg) lessonMessage.className = "alert";
   }
 
-  // Sitzplan aus Namen neu bauen (Zähler bleiben, wenn Namen gleich)
+  // Sitzplan aus Namen neu bauen (Zähler & Anwesenheit beibehalten, wenn Name gleich)
   function buildStudentsFromNames() {
     const names = namesInput.value
       .split("\n")
@@ -567,12 +589,14 @@
             row: r,
             col: c,
             pos: old ? old.pos : 0,
-            neg: old ? old.neg : 0
+            neg: old ? old.neg : 0,
+            present: old ? old.present : true
           });
           index++;
         }
       }
     } else {
+      // column layout
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
           if (index >= names.length) break;
@@ -584,7 +608,8 @@
             row: r,
             col: c,
             pos: old ? old.pos : 0,
-            neg: old ? old.neg : 0
+            neg: old ? old.neg : 0,
+            present: old ? old.present : true
           });
           index++;
         }
@@ -608,7 +633,6 @@
     const cols = parseInt(colsInput.value, 10) || 1;
     const layout = layoutSelect.value;
 
-    // Wenn kein aktuelles students-Array existiert, aus Text erzeugen
     if (!students || students.length === 0) {
       buildStudentsFromNames();
     }
@@ -656,20 +680,19 @@
     colsInput.value = cls.cols;
     layoutSelect.value = cls.layout;
 
-    // Namen ins Textfeld generieren
     const sorted = [...cls.students].sort((a, b) =>
       a.row - b.row || a.col - b.col
     );
     namesInput.value = sorted.map(s => s.name).join("\n");
 
-    // students mit Zählern initialisieren
     students = sorted.map((s, idx) => ({
       id: idx,
       name: s.name,
       row: s.row,
       col: s.col,
       pos: 0,
-      neg: 0
+      neg: 0,
+      present: true
     }));
 
     renderSeatingGrid();
@@ -686,12 +709,11 @@
     }
     const cls = classes.find(c => c.id === currentClassId);
     const name = cls ? cls.name : currentClassId;
-    if (!confirm(`Klasse "${name}" wirklich löschen? (Sitzplan bleibt lokal nur in dieser Sitzung geladen)`)) return;
+    if (!confirm(`Klasse "${name}" wirklich löschen? (Gespeicherte Stunden bleiben erhalten)`)) return;
 
     classes = classes.filter(c => c.id !== currentClassId);
     saveClasses();
 
-    // auch Sessions dieser Klasse anzeigen, aber nicht löschen (könnte man auch löschen)
     currentClassId = null;
     classSelect.value = "";
     classNameInput.value = "";
@@ -740,18 +762,44 @@
           empty.textContent = "frei";
           seat.appendChild(empty);
         } else {
+          if (s.present === false) {
+            seat.classList.add("absent");
+          }
+
           const nameEl = document.createElement("div");
           nameEl.className = "seat-name";
           nameEl.textContent = s.name;
 
+          // Anwesenheit
+          const presenceRow = document.createElement("div");
+          presenceRow.className = "presence-row";
+          const presenceLabel = document.createElement("label");
+          presenceLabel.className = "presence-label";
+          const presenceCheckbox = document.createElement("input");
+          presenceCheckbox.type = "checkbox";
+          presenceCheckbox.checked = (s.present !== false);
+          presenceCheckbox.addEventListener("change", () => {
+            s.present = presenceCheckbox.checked;
+            if (s.present) {
+              seat.classList.remove("absent");
+            } else {
+              seat.classList.add("absent");
+            }
+            updateStats();
+          });
+          presenceLabel.appendChild(presenceCheckbox);
+          presenceLabel.appendChild(document.createTextNode("anwesend"));
+          presenceRow.appendChild(presenceLabel);
+
           const countersEl = document.createElement("div");
           countersEl.className = "seat-counters";
 
+          // Positiv-Reihe
           const posRow = document.createElement("div");
           posRow.className = "counter-row";
           const posLabel = document.createElement("span");
           posLabel.className = "counter-label";
-          posLabel.textContent = ""; /* "Positiv";*/
+          posLabel.textContent = ""; /*"Positiv";*/
           const posVal = document.createElement("span");
           posVal.className = "counter-value";
           posVal.textContent = s.pos;
@@ -780,6 +828,7 @@
           posRow.appendChild(posBtns);
           posRow.appendChild(posVal);
 
+          // Negativ-Reihe
           const negRow = document.createElement("div");
           negRow.className = "counter-row";
           const negLabel = document.createElement("span");
@@ -817,6 +866,7 @@
           countersEl.appendChild(negRow);
 
           seat.appendChild(nameEl);
+          seat.appendChild(presenceRow);
           seat.appendChild(countersEl);
         }
 
@@ -827,7 +877,7 @@
 
   function adjustCounter(student, field, delta, valueElement) {
     if (field !== "pos" && field !== "neg") return;
-    student[field] = Math.max(0, student[field] + delta); // keine negativen Werte
+    student[field] = Math.max(0, student[field] + delta);
     valueElement.textContent = student[field];
     updateStats();
   }
@@ -852,18 +902,23 @@
       return;
     }
 
-    const totalPos = students.reduce((sum, s) => sum + s.pos, 0);
-    const totalNeg = students.reduce((sum, s) => sum + s.neg, 0);
-    const avgPos = totalPos / students.length;
-    const avgNeg = totalNeg / students.length;
+    const presentStudents = students.filter(s => s.present !== false);
+    const base = presentStudents.length > 0 ? presentStudents : students;
 
-    const maxPos = Math.max(...students.map(s => s.pos), 0);
-    const maxNeg = Math.max(...students.map(s => s.neg), 0);
+    const totalPos = base.reduce((sum, s) => sum + s.pos, 0);
+    const totalNeg = base.reduce((sum, s) => sum + s.neg, 0);
+    const avgPos = totalPos / base.length;
+    const avgNeg = totalNeg / base.length;
 
-    const topPos = students.filter(s => s.pos === maxPos && maxPos > 0).map(s => s.name);
-    const topNeg = students.filter(s => s.neg === maxNeg && maxNeg > 0).map(s => s.name);
+    const maxPos = Math.max(...base.map(s => s.pos), 0);
+    const maxNeg = Math.max(...base.map(s => s.neg), 0);
 
-    let text = `Positiv gesamt: ${totalPos}, Ø pro Schüler: ${avgPos.toFixed(2)} · Negativ gesamt: ${totalNeg}, Ø: ${avgNeg.toFixed(2)}.`;
+    const topPos = base.filter(s => s.pos === maxPos && maxPos > 0).map(s => s.name);
+    const topNeg = base.filter(s => s.neg === maxNeg && maxNeg > 0).map(s => s.name);
+
+    let text = `Anwesend: ${presentStudents.length} von ${students.length}. `;
+    text += `Positiv gesamt: ${totalPos}, Ø pro anwesend: ${isFinite(avgPos) ? avgPos.toFixed(2) : "0"} · `;
+    text += `Negativ gesamt: ${totalNeg}, Ø: ${isFinite(avgNeg) ? avgNeg.toFixed(2) : "0"}.`;
     if (topPos.length > 0) {
       text += ` Beste positive Mitarbeit: ${topPos.join(", ")} (${maxPos}).`;
     }
@@ -872,33 +927,30 @@
     }
     statsText.textContent = text;
 
-    // Tabelle aktuelle Stunde
-    const sorted = [...students].sort((a, b) => {
-      // zuerst nach positiver Mitarbeit, dann nach Name
-      const diff = b.pos - a.pos;
-      if (diff !== 0) return diff;
-      return a.name.localeCompare(b.name);
-    });
+    const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
 
     currentTableBody.innerHTML = "";
     sorted.forEach((s, idx) => {
       const tr = document.createElement("tr");
       const tdRank = document.createElement("td");
       const tdName = document.createElement("td");
+      const tdPres = document.createElement("td");
       const tdPos = document.createElement("td");
       const tdNeg = document.createElement("td");
 
       tdRank.textContent = idx + 1;
       tdName.textContent = s.name;
+      tdPres.textContent = (s.present === false) ? "nein" : "ja";
       tdPos.textContent = s.pos;
       tdNeg.textContent = s.neg;
 
-      if (s.pos === maxPos && maxPos > 0) {
+      if (s.pos === maxPos && maxPos > 0 && s.present !== false) {
         tdName.classList.add("top-student");
       }
 
       tr.appendChild(tdRank);
       tr.appendChild(tdName);
+      tr.appendChild(tdPres);
       tr.appendChild(tdPos);
       tr.appendChild(tdNeg);
       currentTableBody.appendChild(tr);
@@ -922,25 +974,27 @@
 
     let dateVal = lessonDateInput.value;
     if (!dateVal) {
-      // Fallback: aktuelles Datum in ISO-Form
       const now = new Date();
-      dateVal = now.toISOString().slice(0,16);
+      const pad = (n) => String(n).padStart(2, "0");
+      dateVal =
+        now.getFullYear() +
+        "-" + pad(now.getMonth() + 1) +
+        "-" + pad(now.getDate());
       lessonDateInput.value = dateVal;
     }
 
-    // datetime-local → ISO
-    const dateIso = new Date(dateVal).toISOString();
-    const sessionId = `${currentClassId}_${dateIso}`;
+    const dateStr = dateVal; // YYYY-MM-DD
+    const sessionId = `${currentClassId}_${dateStr}`;
 
     const scores = students.map(s => ({
       name: s.name,
       pos: s.pos,
-      neg: s.neg
+      neg: s.neg,
+      present: s.present !== false
     }));
 
-    // Wenn es schon eine Session mit gleicher ID gibt -> überschreiben
     const existingIndex = sessions.findIndex(s => s.id === sessionId);
-    const sessionObj = { id: sessionId, classId: currentClassId, className, dateIso, scores };
+    const sessionObj = { id: sessionId, classId: currentClassId, className, date: dateStr, scores };
 
     if (existingIndex >= 0) {
       sessions[existingIndex] = sessionObj;
@@ -963,7 +1017,7 @@
 
     const filtered = sessions
       .filter(s => s.classId === currentClassId)
-      .sort((a, b) => new Date(b.dateIso) - new Date(a.dateIso));
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
 
     if (filtered.length === 0) {
       sessionsTable.style.display = "none";
@@ -975,23 +1029,16 @@
     sessionsTableBody.innerHTML = "";
 
     filtered.forEach(s => {
-      const totalPos = s.scores.reduce((sum, x) => sum + x.pos, 0);
-      const totalNeg = s.scores.reduce((sum, x) => sum + x.neg, 0);
+      const base = s.scores.filter(x => x.present !== false);
+      const totalPos = base.reduce((sum, x) => sum + x.pos, 0);
+      const totalNeg = base.reduce((sum, x) => sum + x.neg, 0);
+
       const tr = document.createElement("tr");
       const tdDate = document.createElement("td");
       const tdPos = document.createElement("td");
       const tdNeg = document.createElement("td");
 
-      const d = new Date(s.dateIso);
-      const dateStr = d.toLocaleString("de-DE", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-
-      tdDate.textContent = dateStr;
+      tdDate.textContent = s.date;
       tdPos.textContent = totalPos;
       tdNeg.textContent = totalNeg;
 
@@ -1029,80 +1076,15 @@
     lines.push(`Klasse;${clsName}`);
     lines.push(`Datum;${dateVal}`);
     lines.push("");
-    lines.push("Platz;Name;Positiv;Negativ");
+    lines.push("Platz;Name;Anwesend;Positiv;Negativ");
 
     const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
     sorted.forEach((s, idx) => {
-      lines.push(`${idx + 1};"${s.name.replace(/"/g, '""')}";${s.pos};${s.neg}`);
+      const pres = (s.present === false) ? "nein" : "ja";
+      lines.push(`${idx + 1};"${s.name.replace(/"/g, '""')}";${pres};${s.pos};${s.neg}`);
     });
 
     downloadCsv(lines.join("\n"), `mitarbeit_${clsName}_aktuelle_stunde.csv`);
-
-    function exportBackup() {
-      const data = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        classes,
-        sessions
-      };
-
-      const json = JSON.stringify(data, null, 2);
-      const today = new Date();
-      const pad = (n) => String(n).padStart(2, "0");
-      const fileDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-
-      const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `mitarbeit_backup_${fileDate}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      showClassMessage("Backup-Datei heruntergeladen.", true);
-    }
-
-    function importBackupFile(file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const text = e.target.result;
-          const data = JSON.parse(text);
-
-          if (!data || !Array.isArray(data.classes) || !Array.isArray(data.sessions)) {
-            showClassMessage("Backup-Datei hat nicht das erwartete Format.", false);
-            return;
-          }
-
-          if (!confirm("Backup importieren? Dadurch werden vorhandene Klassen und Stunden überschrieben.")) {
-            return;
-          }
-
-          classes = data.classes;
-          sessions = data.sessions;
-
-          saveClasses();
-          saveSessions();
-
-          updateClassSelect();
-          renderSessionsTable();
-          students = [];      // aktueller Sitzplan wird neu geladen, wenn du eine Klasse auswählst
-          renderSeatingGrid();
-          updateStats();
-          currentClassId = null;
-          updateCurrentClassLabel();
-
-          showClassMessage("Backup importiert. Bitte Klasse auswählen.", true);
-        } catch (err) {
-          console.error(err);
-          showClassMessage("Backup-Datei konnte nicht gelesen werden.", false);
-        }
-      };
-      reader.readAsText(file);
-    }
-
   }
 
   function exportAllSessionsCsv() {
@@ -1122,20 +1104,13 @@
     const lines = [];
     lines.push(`Klasse;${className}`);
     lines.push("");
-    lines.push("Datum;Name;Positiv;Negativ");
+    lines.push("Datum;Name;Anwesend;Positiv;Negativ");
 
     filtered.forEach(s => {
-      const d = new Date(s.dateIso);
-      const dateStr = d.toLocaleString("de-DE", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
       s.scores.forEach(sc => {
+        const pres = (sc.present === false) ? "nein" : "ja";
         lines.push(
-          `"${dateStr}";"${sc.name.replace(/"/g, '""')}";${sc.pos};${sc.neg}`
+          `"${s.date}";"${sc.name.replace(/"/g, '""')}";${pres};${sc.pos};${sc.neg}`
         );
       });
     });
@@ -1158,13 +1133,78 @@
   function setLessonDateNow() {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
-    const localIso =
+    const dateStr =
       now.getFullYear() +
       "-" + pad(now.getMonth() + 1) +
-      "-" + pad(now.getDate()) +
-      "T" + pad(now.getHours()) +
-      ":" + pad(now.getMinutes());
-    lessonDateInput.value = localIso;
+      "-" + pad(now.getDate());
+    lessonDateInput.value = dateStr;
+  }
+
+  // ------------------ Backup Export / Import -----------------------
+
+  function exportBackup() {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      classes,
+      sessions
+    };
+
+    const json = JSON.stringify(data, null, 2);
+    const today = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const fileDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+
+    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mitarbeit_backup_${fileDate}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showClassMessage("Backup-Datei heruntergeladen.", true);
+  }
+
+  function importBackupFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const data = JSON.parse(text);
+
+        if (!data || !Array.isArray(data.classes) || !Array.isArray(data.sessions)) {
+          showClassMessage("Backup-Datei hat nicht das erwartete Format.", false);
+          return;
+        }
+
+        if (!confirm("Backup importieren? Dadurch werden vorhandene Klassen und Stunden überschrieben.")) {
+          return;
+        }
+
+        classes = data.classes;
+        sessions = data.sessions;
+
+        saveClasses();
+        saveSessions();
+
+        updateClassSelect();
+        renderSessionsTable();
+        students = [];
+        renderSeatingGrid();
+        updateStats();
+        currentClassId = null;
+        updateCurrentClassLabel();
+
+        showClassMessage("Backup importiert. Bitte Klasse auswählen.", true);
+      } catch (err) {
+        console.error(err);
+        showClassMessage("Backup-Datei konnte nicht gelesen werden.", false);
+      }
+    };
+    reader.readAsText(file);
   }
 
   // ------------------ Event Listener --------------------------------
@@ -1175,6 +1215,10 @@
       currentClassId = null;
       updateCurrentClassLabel();
       showClassMessage("");
+      students = [];
+      renderSeatingGrid();
+      updateStats();
+      renderSessionsTable();
       return;
     }
     loadClassById(id);
@@ -1213,18 +1257,16 @@
     exportAllSessionsCsv();
   });
 
-
   backupExportBtn.addEventListener("click", () => {
-  exportBackup();
-});
+    exportBackup();
+  });
 
-backupImportInput.addEventListener("change", (event) => {
-  const file = event.target.files && event.target.files[0];
-  if (!file) return;
-  importBackupFile(file);
-  // Auswahl zurücksetzen, damit du später die gleiche Datei erneut wählen kannst
-  backupImportInput.value = "";
-});
+  backupImportInput.addEventListener("change", (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    importBackupFile(file);
+    backupImportInput.value = "";
+  });
 
   // ------------------ Initialisierung -------------------------------
 

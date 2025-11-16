@@ -1,4 +1,4 @@
-const CACHE_NAME = "sitzplan-pwa-v4";
+const CACHE_NAME = "sitzplan-pwa-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -13,7 +13,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting(); // NEU: sofort aktiv werden wollen
+  self.skipWaiting(); // neue Version sofort aktivieren wollen
 });
 
 // Activate: alte Caches entfernen
@@ -27,6 +27,7 @@ self.addEventListener("activate", (event) => {
       )
     )
   );
+  self.clients.claim(); // Kontrolle über offene Clients übernehmen
 });
 
 // Fetch: erst Cache, dann Netz (falls online)
@@ -35,7 +36,6 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).catch(() => {
-        // Offline & nicht im Cache
         return new Response("Offline – Ressource nicht im Cache.", {
           status: 503,
           statusText: "Service Unavailable"
@@ -43,7 +43,4 @@ self.addEventListener("fetch", (event) => {
       });
     })
   );
-  self.clients.claim(); // NEU: Kontrolle über offene Tabs übernehmen
 });
-
-
